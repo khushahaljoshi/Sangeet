@@ -3,10 +3,12 @@ package com.example.kjoshi.musicplayer;
 
 import android.content.ContentUris;
 import android.content.Context;
+import android.content.Intent;
 import android.graphics.Bitmap;
 import android.media.AudioManager;
 import android.media.MediaPlayer;
 import android.net.Uri;
+import android.os.AsyncTask;
 import android.os.Handler;
 import android.provider.MediaStore;
 import android.support.v7.app.AppCompatActivity;
@@ -16,23 +18,28 @@ import android.view.View;
 import android.widget.AdapterView;
 import android.widget.ImageButton;
 import android.widget.ImageView;
+import android.widget.LinearLayout;
 import android.widget.ListView;
 import android.widget.SeekBar;
 import android.widget.TextView;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Random;
 
-public class MainActivity extends AppCompatActivity implements SeekBar.OnSeekBarChangeListener, MediaPlayer.OnCompletionListener {
+public class MainActivity extends AppCompatActivity implements MediaPlayer.OnCompletionListener {
     static ArrayList<Song> songs;
+    static ArrayList<Integer> shuffleList;
     SongAdapter songAdapter;
+    boolean notPlay = false;
     MediaPlayer mMediaPlayer = null;
     ImageView imgView, background;
     Bitmap bitmap = null;
     ImageButton pause_play, pre, next, repeat, shuffle;
     TextView name, artist;
-    int flag = 0, currentPosition = 0, last = 0, rep = 0, dur = 0;
-    SeekBar sSeekBar;
+    int flag = 0, currentPosition = 0, last = 0, rep = 0, dur = 0, shuf = 0, currentShuffle = 0;
+
+    ShuffleAsyncTask shuffleAsyncTask;
     public Handler mHandler = new Handler();
 
 
@@ -79,7 +86,8 @@ public class MainActivity extends AppCompatActivity implements SeekBar.OnSeekBar
         next = (ImageButton) findViewById(R.id.next);
         repeat = (ImageButton) findViewById(R.id.repeat);
         shuffle = (ImageButton) findViewById(R.id.shuffle);
-        sSeekBar = (SeekBar) findViewById(R.id.seekbar);
+
+        LinearLayout details = (LinearLayout) findViewById(R.id.details);
 
 
         ListView listView = (ListView) findViewById(R.id.list);
@@ -89,17 +97,27 @@ public class MainActivity extends AppCompatActivity implements SeekBar.OnSeekBar
 
 
         last = songAdapter.getCount();
-        sSeekBar.setOnSeekBarChangeListener(this);
+
 
         listView.setOnItemClickListener(new AdapterView.OnItemClickListener() {
             @Override
             public void onItemClick(AdapterView<?> parent, View view, int position, long id) {
                 currentPosition = position;
                 playMusic(songs.get(currentPosition));
+                Intent i = new Intent(MainActivity.this, DetailView.class);
+                startActivity(i);
 
             }
         });
 
+        details.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                Intent i = new Intent(MainActivity.this, DetailView.class);
+                startActivity(i);
+            }
+        });
+/*
         pause_play.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -124,15 +142,14 @@ public class MainActivity extends AppCompatActivity implements SeekBar.OnSeekBar
         pre.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                if(mMediaPlayer!=null) {
+                if (mMediaPlayer != null) {
                     dur = mMediaPlayer.getCurrentPosition();
-                    if (dur / 1000 < 3){
+                    if (dur / 1000 < 3) {
                         previous();
-                    }else{
+                    } else {
                         playMusic(songs.get(currentPosition));
                     }
-                }
-                else{
+                } else {
                     previous();
                 }
             }
@@ -149,15 +166,14 @@ public class MainActivity extends AppCompatActivity implements SeekBar.OnSeekBar
             @Override
             public void onClick(View v) {
                 if (rep == 0) {
-                    rep = rep+1;
+                    rep = rep + 1;
                     repeat.setImageResource(R.drawable.ic_repeat_black_36dp);
-                } else if(rep==1){
+                } else if (rep == 1) {
                     rep = rep + 1;
                     repeat.setImageResource(R.drawable.ic_repeat_one_black_36dp);
-                }
-                else{
+                } else {
                     repeat.setImageResource(R.drawable.ic_repeat_white_36dp);
-                    rep=0;
+                    rep = 0;
                 }
                 Log.d("rep", "" + rep);
             }
@@ -167,7 +183,17 @@ public class MainActivity extends AppCompatActivity implements SeekBar.OnSeekBar
         shuffle.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                shuffle.setImageResource(R.drawable.ic_shuffle_black_36dp);
+                if (shuf == 0) {
+                    shuffle.setImageResource(R.drawable.ic_shuffle_black_36dp);
+                    shuf = 1;
+                    shuffleAsyncTask = new ShuffleAsyncTask();
+                    shuffleAsyncTask.execute();
+                } else {
+                    shuffle.setImageResource(R.drawable.ic_shuffle_white_36dp);
+                    shuf = 0;
+                    shuffleAsyncTask.cancel(true);
+                    shuffleList.clear();
+                }
             }
         });
 
@@ -180,6 +206,7 @@ public class MainActivity extends AppCompatActivity implements SeekBar.OnSeekBar
                 mHandler.postDelayed(this, 1000);
             }
         });
+        */
     }
 
     public void playMusic(Song current) {
@@ -203,8 +230,6 @@ public class MainActivity extends AppCompatActivity implements SeekBar.OnSeekBar
             startMusic();
             updateBar(current);
             flag = 1;
-            sSeekBar.setProgress(0);
-            sSeekBar.setMax(mMediaPlayer.getDuration());
             mMediaPlayer.setOnCompletionListener(this);
         }
     }
@@ -227,33 +252,60 @@ public class MainActivity extends AppCompatActivity implements SeekBar.OnSeekBar
         pause_play.setImageResource(R.drawable.ic_pause_circle_filled_black_48dp);
     }
 
+
     public void next() {
-        if (rep == 0) {
-            if (currentPosition == last - 1) {
-                currentPosition = 0;
-                release();
+        if (shuf == 0) {
+            if (rep == 0) {
+                if (currentPosition == last - 1) {
+                    currentPosition = 0;
+                    release();
+                } else {
+                    currentPosition = currentPosition + 1;
+                    playMusic(songs.get(currentPosition));
+                }
+            } else if (rep == 1) {
+                if (currentPosition == last - 1) {
+                    currentPosition = 0;
+                } else {
+                    currentPosition = currentPosition + 1;
+                }
+                playMusic(songs.get(currentPosition));
             } else {
-                currentPosition = currentPosition + 1;
                 playMusic(songs.get(currentPosition));
             }
-        } else if (rep == 1) {
-            if (currentPosition == last - 1) {
-                currentPosition = 0;
-            } else {
-                currentPosition = currentPosition + 1;
-            }
-            playMusic(songs.get(currentPosition));
         } else {
-            playMusic(songs.get(currentPosition));
+            if (rep == 0) {
+                if (currentShuffle == last - 1) {
+                    currentShuffle = 0;
+                    currentPosition = shuffleList.get(currentShuffle);
+                    release();
+                } else {
+                    currentShuffle = currentShuffle + 1;
+                    currentPosition = shuffleList.get(currentShuffle);
+                    playMusic(songs.get(currentPosition));
+                }
+            } else if (rep == 1) {
+                if (currentShuffle == last - 1) {
+                    currentShuffle = 0;
+                } else {
+                    currentShuffle = currentShuffle + 1;
+                }
+                currentPosition = shuffleList.get(currentShuffle);
+                playMusic(songs.get(currentPosition));
+            } else {
+                currentPosition = shuffleList.get(currentShuffle);
+                playMusic(songs.get(currentPosition));
+            }
         }
     }
 
     public void previous() {
+        if (shuf == 0) {
             if (rep == 0) {
                 if (currentPosition != 0) {
                     currentPosition = currentPosition - 1;
                 }
-                playMusic(songs.get(currentPosition));
+                playMusic(MainActivity.songs.get(currentPosition));
             } else if (rep == 1) {
                 if (currentPosition != 0) {
                     currentPosition = currentPosition - 1;
@@ -264,6 +316,26 @@ public class MainActivity extends AppCompatActivity implements SeekBar.OnSeekBar
             } else {
                 playMusic(songs.get(currentPosition));
             }
+        } else {
+            if (rep == 0) {
+                if (currentShuffle != 0) {
+                    currentShuffle = currentShuffle - 1;
+                }
+                currentPosition = shuffleList.get(currentShuffle);
+                playMusic(songs.get(currentPosition));
+            } else if (rep == 1) {
+                if (currentShuffle != 0) {
+                    currentShuffle = currentShuffle - 1;
+                } else {
+                    currentShuffle = last - 1;
+                }
+                currentPosition = shuffleList.get(currentShuffle);
+                playMusic(songs.get(currentPosition));
+            } else {
+                currentPosition = shuffleList.get(currentShuffle);
+                playMusic(songs.get(currentPosition));
+            }
+        }
     }
 
     public void release() {
@@ -277,9 +349,21 @@ public class MainActivity extends AppCompatActivity implements SeekBar.OnSeekBar
     }
 
     @Override
-    public void onCompletion(MediaPlayer mp) {
+    public void onCompletion(MediaPlayer mp){
+
+    if(notPlay)
+
+    {
+        playMusic(songs.get(currentPosition));
+        notPlay = false;
+    }
+
+    else
+
+    {
         next();
     }
+}
 
 
     @Override
@@ -298,22 +382,39 @@ public class MainActivity extends AppCompatActivity implements SeekBar.OnSeekBar
         super.onPause();
     }
 
+    public class ShuffleAsyncTask extends AsyncTask<Void, Integer, Void> {
+        @Override
+        protected Void doInBackground(Void... params) {
+            shuffleList = new ArrayList<Integer>();
+            Random rand = new Random();
+            for (int i = 0; i < last; i++) {
+                int randNum = rand.nextInt(last - 0 + 1) + 0;
+                if (shuffleList.contains(randNum)) {
+                } else {
+                    publishProgress(randNum);
+                }
+                if (isCancelled()) break;
+            }
+            return null;
+        }
 
-    @Override
-    public void onStopTrackingTouch(SeekBar seekBar) {
+        @Override
+        protected void onProgressUpdate(Integer... values) {
+            shuffleList.add(values[0]);
+            Log.d("added value", "" + values[0]);
+        }
 
-    }
-
-    @Override
-    public void onStartTrackingTouch(SeekBar seekBar) {
-
-    }
-
-    @Override
-    public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
-        if (mMediaPlayer != null && fromUser) {
-            mMediaPlayer.seekTo(progress);
+        @Override
+        protected void onPostExecute(Void aVoid) {
+            Log.d("current positon", "" + shuffleList.get(0));
+            currentPosition = shuffleList.get(0);
+            if(mMediaPlayer!=null) {
+                notPlay=true;
+            }
+            else
+                playMusic(MainActivity.songs.get(currentPosition));
         }
     }
+
 
 }
